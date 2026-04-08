@@ -22,9 +22,10 @@ import chromadb
 from flask import Flask, send_from_directory, request, jsonify
 from dotenv import load_dotenv
 
-# Load .env when running locally
+# Load .env from workspace root when running locally
 # On Railway, ANTHROPIC_API_KEY is set as an environment variable directly
-load_dotenv()
+_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", ".env"))
+load_dotenv(_env_path)
 
 KNOWLEDGE_BASE_DIR = os.path.join(os.path.dirname(__file__), "knowledge_base")
 CHROMA_DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
@@ -39,11 +40,11 @@ api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise EnvironmentError("ANTHROPIC_API_KEY not set.")
 
-anthropic_client = anthropic.Anthropic(api_key=api_key)
+anthopic_client = anthropic.Anthropic(api_key=api_key)
 chroma_client = chromadb.PersistentClient(path=CHROMA_DB_DIR)
 
 
-# ── Ingestion (runs at startup if collection is missing) ──────────────────────
+# ── Ingestion (runs at startup if collection is missing) ────────────────────
 
 def chunk_text(text):
     chunks = []
@@ -92,16 +93,31 @@ except Exception:
     collection = run_ingest()
 
 
-# ── RAG helpers ───────────────────────────────────────────────────────────────
+# ── RAG helpers ────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are a helpful customer service assistant for Acme Corp, a home goods retailer.
 
-Answer the customer's question using ONLY the context provided below. Be friendly, clear, and concise.
+Answer the customer's question using ONLY the context provided below. Be friendly, clear, and conversational — write the way a knowledgeable customer service representative would speak, not like a formatted document.
+
+Formatting rules:
+- Do not use markdown formatting of any kind. No hashtags, no asterisks for bold or italics, no dash bullet points.
+- Write in plain prose sentences.
+- Use numbered steps (1. 2. 3.) only when walking through a sequence of actions, written naturally in the flow of your response.
 
 If the answer is not contained in the provided context, say exactly:
 "I don't have information about that in my knowledge base. For further help, please contact our customer service team at 1-800-555-2674 or support@acmecorp.example.com."
 
-Do not make up information. Do not answer from your general knowledge."""
+Do not make up information. Do not answer from your general knowledge.
+
+Smart navigation: When the customer's question is clearly focused on one specific topic area, end your response with this exact sentence: "More information about this can be found on the [Page Name] page. Would you like me to take you there now?" — replacing [Page Name] with the most relevant page from this list:
+- Products (questions about what Acme Corp sells, specific items, or best sellers)
+- Shipping (delivery times, costs, tracking, or carriers)
+- Returns (return window, how to start a return, refunds, or exchanges)
+- FAQ (account questions, orders, warranty, gift cards, or password reset)
+- Pricing (price match, payment methods, Rewards program, or financing)
+- About (company background, contact info, or business hours)
+
+Only add this sentence when the question maps clearly to one page. Do not add it for general or multi-topic questions."""
 
 
 def retrieve_context(question):
@@ -131,7 +147,7 @@ def ask_claude(user_question, context_block):
 
 Customer question: {user_question}"""
 
-    response = anthropic_client.messages.create(
+    response = anthopic_client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
         system=SYSTEM_PROMPT,
@@ -140,7 +156,7 @@ Customer question: {user_question}"""
     return response.content[0].text
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
